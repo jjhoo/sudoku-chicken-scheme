@@ -13,6 +13,8 @@
 ;;  You should have received a copy of the GNU Affero General Public License
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ;;
+(require-extension srfi-121)
+
 (define (num-to-box-number num)
   (case num
     ((1 2 3) 1)
@@ -37,8 +39,23 @@
                (nj (if (= j 9) 1 (+ j 1))))
           (loop ni nj nsolved (cdr tmp))))))
 
+(define (grid-init)
+  (let ((g (make-coroutine-generator
+            (lambda (yield)
+              (let loop ((i 1) (j 1) (n 1))
+                (when (not (and (= i 9) (= j 9) (= n 10)))
+                      (cond ((> n 9) (loop i (+ j 1) 1))
+                            ((> j 9) (loop (+ i 1) 1 1))
+                            (else (begin
+                                    (yield (cell-init i j n))
+                                    (loop i j (+ n 1)))))))))))
+    (generator->list g)))
+
 (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
 (print GRID)
 
 (define solved (str-to-solved GRID))
 (print solved)
+
+(define cands (grid-init))
+(print cands)
