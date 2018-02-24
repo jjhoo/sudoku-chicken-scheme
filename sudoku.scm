@@ -98,9 +98,9 @@
 
 (define (scand-get-box box cands)
   (let ((box (if (integer? box)
-                 (box-number-to-index box)
-                 (box))))
-    (filter (match-lambda [(r c b n) (equal? box b)] [_ #f]) cands)))
+                  (box-number-to-index box)
+                  box)))
+    (filter (match-lambda [((r c b) . n) (equal? box b)] [_ #f]) cands)))
 
 (define (scand-get-cell pos cands)
   (filter (match-lambda [(p . n) (equal? pos p)] [_ #f]) cands))
