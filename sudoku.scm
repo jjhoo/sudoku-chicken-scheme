@@ -14,6 +14,7 @@
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ;;
 (use srfi-1)
+(require-extension combinatorics)
 (require-extension matchable)
 (require-extension srfi-121)
 
@@ -47,6 +48,9 @@
 
 (define (scand-cell-pos cell)
   (car cell))
+
+(define (scand-cell-value cell)
+  (cdr cell))
 
 (define (scand-init row col n)
   (cons (list row col (cell-box-calc row col)) n))
@@ -114,6 +118,27 @@
 
 (define (numbers cands)
   (sort (map cdr cands) <))
+
+(define (delete-neighbour-dups = numbers)
+  (let ((nil (gensym)))
+    (let loop ((xs numbers) (res '()) (current nil))
+      (if (eq? xs '())
+          (reverse res)
+          (match
+           xs
+           [(H . T) (cond ((eq? nil current) (loop T (list H) H))
+                          ((= H current) (loop T res H))
+                          (else (loop T (cons H res) H)))])))))
+
+(define (number-counts numbers #!optional (limit 'nil))
+  (let* ((unums (delete-neighbour-dups = numbers))
+         (counts (map (lambda (n)
+                        (cons n (length (filter (lambda (x) (= x n))
+                                                numbers))))
+                      unums)))
+    (if (eq? limit 'nil)
+        counts
+        (filter (lambda (item) (= limit (cdr item))) counts))))
 
 (define (unique-numbers-gen cands)
   (gdelete-neighbor-dups
@@ -195,6 +220,7 @@
 
 ;; Find unsolved cells that have only one candidate left
 (define (find-singles-simple solved cands)
+  (print "Hidden singles (simple)")
   (let ((fun (lambda (cands)
                (generator-fold
                 (lambda (pos res)
@@ -211,6 +237,7 @@
     (finder fun cands)))
 
 (define (find-singles solved cands)
+  (print "Hidden singles")
   (let ((fun (lambda (cands)
                (generator-fold
                 (lambda (n res)
@@ -223,6 +250,67 @@
                    [xxx res]))
                 (cons '() '())
                 (unique-numbers-gen cands)))))
+    (finder fun cands)))
+
+(define (list-less? < =)
+  (lambda (alist blist)
+    (let loop ((as alist) (bs blist))
+      (cond ((and (eq? as '()) (eq? bs '())) #f)
+            ((or (eq? as '()) (eq? bs '())) #f)
+            ((< (car as) (car bs)) #t)
+            ((= (car as) (car bs)) (loop (cdr as) (cdr bs)))
+            (else #f)))))
+
+(define (cell-numbers-for-pos pos cands)
+  (map (lambda (cell) (cdr cell)) (scand-get-cell pos cands)))
+
+(define (find-cells-cond pred cands)
+  (let* ((poss (generator->list (unique-positions-gen cands)))
+         (pos-nums (map (lambda (pos)
+                          (cons pos (cell-numbers-for-pos pos cands)))
+                        poss)))
+    (filter (lambda (pos-num-p) (pred (cdr pos-num-p))) pos-nums)))
+
+(define (find-naked-groups-in-set limit cands)
+  (if (< (length (generator->list (unique-positions-gen cands))) (+ limit 1))
+      ;; (print "Early return " (generator->list (unique-positions-gen cands)))
+      (cons '() '())
+      (begin
+        (let* ((nums (numbers cands))
+               (ncounts (number-counts nums))
+               (unums (map (lambda (x) (first x)) ncounts))
+               (kperms (sort (unordered-subset-map
+                              (lambda (c) (sort c <))
+                              unums limit)
+                             (list-less? < equal?))))
+          ;; now find if 'limit' count of cells contain a naked group
+          ;; of 'limit' count of numbers
+          ;; (print "Combos (" limit ") >> " kperms " << for cands >> " cands)
+          (let loop ((permgen (list->generator kperms)) (found '()))
+            (match
+             (permgen)
+             [#!eof (cons '() found)]
+             [perm
+              (let* ((foos (find-cells-cond
+                            (lambda (numbers)
+                              (or (equal? perm numbers)
+                                  (eq? '() (lset-difference equal? numbers perm))))
+                            cands)))
+                (if (= (length foos) limit)
+                    (let ((positions (map (lambda (cell) (first cell)) foos)))
+                      ;; (print "Found something? " perm " " foos)
+                      (loop permgen
+                            (append found
+                                    (filter
+                                     (lambda (cell)
+                                       (and (find (lambda (x) (= x (scand-cell-value cell))) perm)
+                                            (not (find (lambda (x) (equal? x (scand-cell-pos cell))) positions))))
+                                     cands))))
+                    (loop permgen found)))]))))))
+
+(define (find-naked-groups limit solved cands)
+  (print "Naked group (" limit ")")
+  (let ((fun (lambda (cands) (find-naked-groups-in-set limit cands))))
     (finder fun cands)))
 
 (define (update-candidates-solved cands solved)
@@ -242,8 +330,12 @@
 (define (solver solved cands)
   (if (eq? cands '())
       (cons solved cands)
-      (let ((funs (list find-singles-simple
-                        find-singles)))
+      (let ((funs
+             (list find-singles-simple
+                   find-singles
+                   (lambda (solved cands) (find-naked-groups 2 solved cands))
+                   (lambda (solved cands) (find-naked-groups 3 solved cands))
+                   )))
         (let loop ((fgen (list->generator funs)))
           (match
            (fgen)
@@ -263,6 +355,17 @@
                            (update-candidates cands eliminated)
                            nsolved)))])])))))
 
+(define ns (list 2 2 2 2 2 5 5 6 6 7 7 9 9 9))
+(print "list " ns
+       "\n deduped "
+       (delete-neighbour-dups = ns)
+       "\n number counts (no limit) "
+       (number-counts ns)
+       "\n number counts (limit = 2) "
+       (number-counts ns 2)
+       "\n number counts (limit = 3) "
+       (number-counts ns 3))
+
 (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
 (print GRID)
 
@@ -274,6 +377,7 @@
 (print (find-singles solved cands))
 ;; (print cands)
 ;; (print (length cands))
+
 (match
  (solver solved cands)
  [(cells . ()) (print "Solved")]
