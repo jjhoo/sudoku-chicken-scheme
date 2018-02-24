@@ -146,18 +146,15 @@
 
 (define (scand-less? cell1 cell2)
   (cond ((< (first (car cell1)) (first (car cell2))) #t)
-        ((> (first (car cell1)) (first (car cell2))) #f)
-        ((< (second (car cell1)) (second (car cell2))) #t)
-        ((> (second (car cell1)) (second (car cell2))) #f)
-        ((< (cdr cell1) (cdr cell2)) #t)
-        ((> (cdr cell1) (cdr cell2)) #f)
+        ((= (first (car cell1)) (first (car cell2)))
+         (cond ((< (second (car cell1)) (second (car cell2))) #t)
+               ((= (second (car cell1)) (second (car cell2)))
+                (< (cdr cell1) (cdr cell2)))
+               (else #f)))
         (else #f)))
 
 (define (cands-sort+dedupe cands)
-  (generator->list
-   (gdelete-neighbor-dups
-    (list->generator
-     (sort cands (lambda (cell1 cell2) scand-less?))))))
+  (delete-neighbour-dups equal? (sort cands scand-less?)))
 
 (define (scand-same-pos? cell1 cell2)
   (equal? (car cell1) (car cell2)))
@@ -208,8 +205,8 @@
            [(() . ())
             (loop solved eliminated)]
            [(nsolved . neliminated)
-            (loop (append nsolved solved)
-                  (append neliminated eliminated)) ]
+            (loop (append solved nsolved)
+                  (append eliminated neliminated)) ]
          ;; [xxx (begin (print "wtf " xxx ) (cons solved eliminated))]
            ))]))))
 
