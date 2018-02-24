@@ -92,19 +92,19 @@
       (pos-same-col? pos1 pos2)
       (pos-same-row? pos1 pos2)))
 
-(define (scand:get-box box cands)
+(define (scand-get-box box cands)
   (let ((box (if (integer? box)
                  (box-number-to-index box)
                  (box))))
     (filter (match-lambda [(r c b n) (equal? box b)] [_ #f]) cands)))
 
-(define (scand:get-cell pos cands)
+(define (scand-get-cell pos cands)
   (filter (match-lambda [(p . n) (equal? pos p)] [_ #f]) cands))
 
-(define (scand:get-col col cands)
+(define (scand-get-col col cands)
   (filter (match-lambda [((r c (a . b)) . n) (= col c)] [_ #f]) cands))
 
-(define (scand:get-row row cands)
+(define (scand-get-row row cands)
   (filter (match-lambda [((r c (a . b)) . n) (= row r)] [_ #f]) cands))
 
 (define (unique-positions-gen cands)
@@ -119,24 +119,29 @@
   (gdelete-neighbor-dups
    (list->generator (numbers cands))))
 
+(define (scand-less? cell1 cell2)
+  (cond ((< (first (car cell1)) (first (car cell2))) #t)
+        ((> (first (car cell1)) (first (car cell2))) #f)
+        ((< (second (car cell1)) (second (car cell2))) #t)
+        ((> (second (car cell1)) (second (car cell2))) #f)
+        ((< (cdr cell1) (cdr cell2)) #t)
+        ((> (cdr cell1) (cdr cell2)) #f)
+        (else #f)))
+
 (define (cands-sort+dedupe cands)
   (generator->list
    (gdelete-neighbor-dups
     (list->generator
-     (sort cands (lambda (cell1 cell2)
-                   (cond ((< (first (car cell1)) (first (car cell2))) #t)
-                         ((> (first (car cell1)) (first (car cell2))) #f)
-                         ((< (second (car cell1)) (second (car cell2))) #t)
-                         ((> (second (car cell1)) (second (car cell2))) #f)
-                         ((< (cdr cell1) (cdr cell2)) #t)
-                         ((> (cdr cell1) (cdr cell2)) #f)
-                         (else #f))))))))
+     (sort cands (lambda (cell1 cell2) scand-less?))))))
 
 (define (scand-same-pos? cell1 cell2)
   (equal? (car cell1) (car cell2)))
 
 (define (scand-same-val? cell1 cell2)
   (= (cdr cell1) (cdr cell2)))
+
+(define (scand-cell-sees? cell1 cell2)
+  (pos-sees? (car cell1) (car cell2)))
 
 (define (scand-pos cell)
   (car cell))
@@ -162,9 +167,9 @@
                yfun
                (make-iota-generator 9 1)
                (lambda ()
-                 (list->generator (list scand:get-row
-                                        scand:get-col
-                                        scand:get-box))))))
+                 (list->generator (list scand-get-row
+                                        scand-get-col
+                                        scand-get-box))))))
     (let loop ((solved '())
                (eliminated '()))
       (match
@@ -175,7 +180,7 @@
           ;; (print "Now i = " i ", fun is " f)
           (match
            (pred (f i cands))
-           [('() . '())
+           [(() . ())
             (loop solved eliminated)]
            [(nsolved . neliminated)
             (loop (append nsolved solved)
@@ -198,8 +203,8 @@
                     (gfilter (lambda (cell)
                                (pos-same? pos (scand-pos cell)))
                              (list->generator cands)))
-                   ['() res]
-                   [(cell) (cons '() (cons cell (cdr res)))]
+                   [() res]
+                   [(cell) (cons (cons cell (car res)) '())]
                    [_ res]))
                 (cons '() '())
                 (unique-positions-gen cands)))))
@@ -213,17 +218,50 @@
                    (generator->list
                     (gfilter (lambda (cell) (= n (cdr cell)))
                              (list->generator cands)))
-                   ['() res]
-                   [(cell) (cons '() (cons cell (cdr res)))]
+                   [() res]
+                   [(cell) (cons (cons cell (car res)) '())]
                    [xxx res]))
                 (cons '() '())
                 (unique-numbers-gen cands)))))
     (finder fun cands)))
 
+(define (update-candidates-solved cands solved)
+  (let ((pred (lambda (cell1 cell2)
+                (or (scand-same-pos? cell1 cell2)
+                    (and (scand-same-val? cell1 cell2)
+                         (scand-cell-sees? cell1 cell2))))))
+  (let loop ((gen (list->generator solved)) (ncands cands))
+    (match
+     (gen)
+     [#!eof ncands]
+     [cell1 (loop gen (remove (lambda (cell2) (pred cell1 cell2)) ncands))]))))
+
+(define (update-candidates cands removals)
+  (lset-difference equal? cands removals))
+
 (define (solver solved cands)
-  (let ((funs (list find-singles-simple
-                    find-singles)))
-    (print (find-singles solved cands))))
+  (if (eq? cands '())
+      (cons solved cands)
+      (let ((funs (list find-singles-simple
+                        find-singles)))
+        (let loop ((fgen (list->generator funs)))
+          (match
+           (fgen)
+           [#!eof (cons solved cands)]
+           [f (match
+               (f solved cands)
+               [(() . ()) (loop fgen)]
+               [(() . eliminated)
+                (begin
+                  (print "Eliminated " eliminated)
+                  (solver solved (lset-xor equal? cands eliminated)))]
+               [(nsolved . eliminated)
+                (begin
+                  (print "Found some solutions? " nsolved)
+                  (solver (merge solved nsolved scand-less?)
+                          (update-candidates-solved
+                           (update-candidates cands eliminated)
+                           nsolved)))])])))))
 
 (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
 (print GRID)
@@ -233,6 +271,10 @@
 ;; (print solved)
 
 (define cands (init solved))
+(print (find-singles solved cands))
 ;; (print cands)
 ;; (print (length cands))
-(solver solved cands)
+(match
+ (solver solved cands)
+ [(cells . ()) (print "Solved")]
+ [(nsolved . ncands) (print "Found some " (lset-difference equal? nsolved solved))])
