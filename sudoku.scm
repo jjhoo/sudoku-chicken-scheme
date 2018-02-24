@@ -140,6 +140,9 @@
         counts
         (filter (lambda (item) (= limit (cdr item))) counts))))
 
+(define (number-counts-cond pred numbers)
+  (filter (lambda (item) (pred (cdr item))) (number-counts numbers)))
+
 (define (unique-numbers-gen cands)
   (gdelete-neighbor-dups
    (list->generator (numbers cands))))
@@ -310,6 +313,74 @@
   (let ((fun (lambda (cands) (find-naked-groups-in-set limit cands))))
     (finder fun cands)))
 
+(define (find-hidden-groups-in-set limit cands)
+  (call/cc
+   (lambda (ret/cc)
+     (if (< (length (generator->list (unique-positions-gen cands)))
+            (+ limit 1))
+         ;; (print "Early return " (generator->list (unique-positions-gen cands)))
+         (ret/cc (cons '() '())))
+     (let* ((nums (numbers cands))
+            (ncounts (number-counts-cond
+                      (lambda (len) (and (>= len 2) (<= len limit)))
+                      nums))
+            (unums (map (lambda (x) (first x)) ncounts)))
+       (if (< (length unums) limit)
+           (ret/cc (cons '() '())))
+
+       ;; (print "Unums " unums ", ncounts " ncounts ", cands " cands)
+       (let ((kperms (sort (unordered-subset-map
+                            (lambda (c) (sort c <))
+                            unums limit)
+                           (list-less? < equal?))))
+         ;; now find if a limited number of cells contain
+         ;; a certain hidden group
+         (let loop ((permgen (list->generator kperms)) (found '()))
+           (match
+               (permgen)
+             [#!eof (ret/cc (cons '() found))]
+             [perm
+              (let* ((ncands (remove
+                              (lambda (cell)
+                                (not
+                                 (any
+                                  (lambda (x)
+                                    (= x (scand-cell-value cell)))
+                                  perm)))
+                              cands))
+                     (positions (generator->list
+                                 (unique-positions-gen ncands)))
+                     (cells (map (lambda (pos)
+                                   (cons pos
+                                         (cell-numbers-for-pos pos ncands)))
+                                 positions)))
+                ;; (print "asdf limit " limit ", perm " perm ", cells " cells)
+                (if (= limit (length cells))
+                    (begin
+                      ;; (print "Found hidden group? " perm
+                      ;;        ", positions " positions
+                      ;;        "\n\t cands " cands)
+                      (loop permgen
+                            (append
+                             found
+                             (filter
+                              (lambda (cell)
+                                (and (not (any
+                                           (lambda (val)
+                                             (= val (scand-cell-value cell)))
+                                           perm))
+                                     (any
+                                      (lambda (pos)
+                                        (equal? pos (scand-cell-pos cell)))
+                                      positions)))
+                              cands))))
+                    (loop permgen found)))])))))))
+
+(define (find-hidden-groups limit solved cands)
+  (print "Hidden group (" limit ")")
+  (let ((fun (lambda (cands) (find-hidden-groups-in-set limit cands))))
+    (finder fun cands)))
+
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -332,6 +403,10 @@
                    find-singles
                    (lambda (solved cands) (find-naked-groups 2 solved cands))
                    (lambda (solved cands) (find-naked-groups 3 solved cands))
+                   (lambda (solved cands) (find-hidden-groups 2 solved cands))
+                   (lambda (solved cands) (find-hidden-groups 3 solved cands))
+                   (lambda (solved cands) (find-naked-groups 4 solved cands))
+                   (lambda (solved cands) (find-hidden-groups 4 solved cands))
                    )))
         (let loop ((fgen (list->generator funs)))
           (match
@@ -363,7 +438,9 @@
        "\n number counts (limit = 3) "
        (number-counts ns 3))
 
-(define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
+;; (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
+;; has hidden triple
+(define GRID "300000000970010000600583000200000900500621003008000005000435002000090056000000001")
 (print GRID)
 
 (define solved (str-to-solved GRID))
@@ -371,11 +448,14 @@
 ;; (print solved)
 
 (define cands (init solved))
-(print (find-singles solved cands))
+;; (print (find-singles solved cands))
 ;; (print cands)
 ;; (print (length cands))
 
 (match
  (solver solved cands)
  [(cells . ()) (print "Solved")]
- [(nsolved . ncands) (print "Found some " (lset-difference equal? nsolved solved))])
+ [(nsolved . ncands)
+  (let* ((xx (lset-difference equal? nsolved solved))
+         (len (length xx)))
+    (print "Found some (count = " len ") " xx))])
