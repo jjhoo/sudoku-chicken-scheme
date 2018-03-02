@@ -381,6 +381,79 @@
   (let ((fun (lambda (cands) (find-hidden-groups-in-set limit cands))))
     (finder fun cands)))
 
+(define (cells-in-same-box cells)
+  (match cells
+    ['() #f]
+    [(cell0 . '()) #t]
+    [(cell0 . cells)
+     (every (lambda (cell)
+              (pos-same-box? (scand-cell-pos cell0) (scand-cell-pos cell)))
+            cells)]))
+
+;; 2 or 3 candidates of a number in the same line and box,
+;; no other candidates for the same line
+;; --> other candidates in the same box can be eliminated
+(define (find-box/line-reduction solved cands)
+  (print "Box/line reduction")
+  (let*
+      ((setfun
+        (lambda (cset cands)
+          (let* ((fun (lambda (n)
+                        (filter (lambda (cell)
+                                  (= n (scand-cell-value cell))) cset)))
+                 (num-occurrances (remove (lambda (n-cells)
+                                           (null? (cdr n-cells)))
+                                         (map (lambda (n) (cons n (fun n)))
+                                              (iota 9 1))))
+                 (interesting (filter
+                               (lambda (n-cells)
+                                 (let ((len (length (cdr n-cells))))
+                                   (and
+                                    (or (= len 2) (= len 3))
+                                    (cells-in-same-box (cdr n-cells)))))
+                               num-occurrances))
+                 (results (map (lambda (foo)
+                                 (let* ((n (car foo))
+                                        (cells (cdr foo))
+                                        (b (third (scand-cell-pos (first cells))))
+                                        (box-cells (scand-get-box b cands))
+                                        (other (filter
+                                                (lambda (cell)
+                                                  (and
+                                                   (= n (scand-cell-value cell))
+                                                   (not (find (lambda (x) (equal? x cell)) cells))))
+                                                box-cells)))
+                                   other)) interesting)))
+            ;; (print "Foos " num-occurrances)
+            ;; (print "Interesting " interesting)
+            ;; (print "    IN " cset)
+            ;; (print "    results " results)
+            (flatten results))))
+       (gen (make-2d-generator
+             (lambda (i fun) (cons i fun))
+             (list->generator (list scand-get-row scand-get-col))
+             (lambda () (make-iota-generator 9 1)))))
+    (let loop ((g gen) (found '()))
+      (match (g)
+        [#!eof (cons '() found)]
+        [(fun . i)
+         (match
+             (setfun (fun i cands) cands)
+           [() (loop g found)]
+           [xs (loop g (append found xs))])]))))
+
+    ;; (for (row 1 9)
+    ;;   (letn ((row-set (scand-get-row row cands))
+    ;;          (xs (setfun row-set cands)))
+    ;;     (if (not (empty? xs))
+    ;;         (set 'found (append found xs)))))
+    ;; (for (col 1 9)
+    ;;   (letn ((col-set (scand-get-col col cands))
+    ;;          (xs (setfun col-set cands)))
+    ;;     (if (not (empty? xs))
+    ;;         (set 'found (append found xs)))))
+    ;; (list '() found)))
+
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -407,6 +480,7 @@
                    (lambda (solved cands) (find-hidden-groups 3 solved cands))
                    (lambda (solved cands) (find-naked-groups 4 solved cands))
                    (lambda (solved cands) (find-hidden-groups 4 solved cands))
+                   find-box/line-reduction
                    )))
         (let loop ((fgen (list->generator funs)))
           (match
@@ -438,9 +512,14 @@
        "\n number counts (limit = 3) "
        (number-counts ns 3))
 
+;; This has box/line reduction, simple colouring and y-wing
+(define GRID "000040700500780020070002006810007900460000051009600078900800010080064009002050000")
+;; needs naked triple, y-wing
 ;; (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
-;; has hidden triple
-(define GRID "300000000970010000600583000200000900500621003008000005000435002000090056000000001")
+;; can proceed with hidden pair
+;; (define GRID "000000000904607000076804100309701080008000300050308702007502610000403208000000000")
+;; naked triple, hidden triple
+;; (define GRID "300000000970010000600583000200000900500621003008000005000435002000090056000000001")
 (print GRID)
 
 (define solved (str-to-solved GRID))
