@@ -143,6 +143,9 @@
 (define (number-counts-cond pred numbers)
   (filter (lambda (item) (pred (cdr item))) (number-counts numbers)))
 
+(define (scand-unique-numbers cands)
+  (delete-neighbour-dups = (numbers cands)))
+
 (define (unique-numbers-gen cands)
   (gdelete-neighbor-dups
    (list->generator (numbers cands))))
@@ -170,6 +173,31 @@
 
 (define (scand-pos cell)
   (car cell))
+
+(define (scand-cell-row cell)
+  (first (scand-cell-pos cell)))
+
+(define (scand-cell-col cell)
+  (second (scand-cell-pos cell)))
+
+(define (cells-in-col? xs)
+  (match xs
+    [(x . '()) #f]
+    [(x0 . rest)
+     (every (lambda (cell)
+              (= (scand-cell-col x0)
+                 (scand-cell-col cell))) rest)]))
+
+(define (cells-in-row? xs)
+  (match xs
+    [(x . '()) #f]
+    [(x0 . rest)
+     (every (lambda (cell)
+              (= (scand-cell-row x0)
+                 (scand-cell-row cell))) rest)]))
+
+(define (cells-in-line? xs)
+  (or (cells-in-row? xs) (cells-in-col? xs)))
 
 (define (init solved)
   (let loop ((xs solved) (cands (grid-init)))
@@ -381,6 +409,49 @@
   (let ((fun (lambda (cands) (find-hidden-groups-in-set limit cands))))
     (finder fun cands)))
 
+;; 2 or 3 candidates of a number in the same line and box,
+;; no other candidates for the same box
+;; --> other candidates in the same line can be eliminated
+(define (find-pointing-pairs solved cands)
+  (print "Pointing pairs")
+  (let loop ((bs (iota 9 1)) (found '()))
+    (match bs
+      ['() (cons '() found)]
+      [(b . rest)
+       (let ((box (scand-get-box b cands)))
+         (if (< (length box) 2)
+             (loop rest found)
+             (let nloop ((nums (scand-unique-numbers box)) (nfound found))
+               (match nums
+                 ['() (loop rest nfound)]
+                 [(n . nrest)
+                  (let ((xs (filter (lambda (cell)
+                                      (= n (scand-cell-value cell)))
+                                    box)))
+                    (if (not (and (or (= (length xs) 2)
+                                      (= (length xs) 3))
+                                  (cells-in-line? xs)))
+                        (nloop nrest nfound)
+                        (let* ((ys (if (cells-in-row? xs)
+                                       (scand-get-row
+                                        (scand-cell-row (first xs)) cands)
+                                       (scand-get-col
+                                        (scand-cell-col (first xs))
+                                        cands)))
+                               (positions (map scand-cell-pos xs))
+                               (nnfound (filter
+                                         (lambda (cell)
+                                           (and (= n (scand-cell-value cell))
+                                                (not (any (lambda (pos)
+                                                            (equal?
+                                                             pos
+                                                             (scand-cell-pos cell)))
+                                                          positions))))
+                                         ys)))
+                          (match nnfound
+                            ['() (nloop nrest nfound)]
+                            [(h . t) (nloop nrest (append nfound nnfound))]))))]))))])))
+
 (define (cells-in-same-box cells)
   (match cells
     ['() #f]
@@ -442,18 +513,6 @@
            [() (loop g found)]
            [xs (loop g (append found xs))])]))))
 
-    ;; (for (row 1 9)
-    ;;   (letn ((row-set (scand-get-row row cands))
-    ;;          (xs (setfun row-set cands)))
-    ;;     (if (not (empty? xs))
-    ;;         (set 'found (append found xs)))))
-    ;; (for (col 1 9)
-    ;;   (letn ((col-set (scand-get-col col cands))
-    ;;          (xs (setfun col-set cands)))
-    ;;     (if (not (empty? xs))
-    ;;         (set 'found (append found xs)))))
-    ;; (list '() found)))
-
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -480,6 +539,7 @@
                    (lambda (solved cands) (find-hidden-groups 3 solved cands))
                    (lambda (solved cands) (find-naked-groups 4 solved cands))
                    (lambda (solved cands) (find-hidden-groups 4 solved cands))
+                   find-pointing-pairs
                    find-box/line-reduction
                    )))
         (let loop ((fgen (list->generator funs)))
@@ -520,6 +580,10 @@
 ;; (define GRID "000000000904607000076804100309701080008000300050308702007502610000403208000000000")
 ;; naked triple, hidden triple
 ;; (define GRID "300000000970010000600583000200000900500621003008000005000435002000090056000000001")
+;; has pointing pairs
+;; (define GRID "000004910009003520050100840000306080000000000070209000037008060085400700014700000")
+;; has pointing pairs and box/line
+;; (define GRID "000921003009000060000000500080403006007000800500700040003000000020000700800195000")
 (print GRID)
 
 (define solved (str-to-solved GRID))
