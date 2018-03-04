@@ -18,6 +18,22 @@
 (require-extension matchable)
 (require-extension srfi-121)
 
+(define-record box row col)
+(define-record pos row col box)
+(define-record scand pos value)
+
+(define-record-printer (box value out)
+  (fprintf out "(box ~s ~s)"
+           (box-row value) (box-col value)))
+
+(define-record-printer (pos value out)
+  (fprintf out "(pos ~s ~s ~s)"
+           (pos-row value) (pos-col value) (pos-box value)))
+
+(define-record-printer (scand value out)
+  (fprintf out "(scand ~s ~s)"
+           (scand-pos value) (scand-value value)))
+
 (define (make-2d-generator yfun gen1 gen2-init)
   (make-coroutine-generator
    (lambda (yield)
@@ -32,9 +48,9 @@
 
 (define (box-number-to-index num)
   (match num
-    [1 (cons 1 1)] [2 (cons 1 2)] [3 (cons 1 3)]
-    [4 (cons 2 1)] [5 (cons 2 2)] [6 (cons 2 3)]
-    [7 (cons 3 1)] [8 (cons 3 2)] [9 (cons 3 3)]
+    [1 (make-box 1 1)] [2 (make-box 1 2)] [3 (make-box 1 3)]
+    [4 (make-box 2 1)] [5 (make-box 2 2)] [6 (make-box 2 3)]
+    [7 (make-box 3 1)] [8 (make-box 3 2)] [9 (make-box 3 3)]
     [_ "invalid"]))
 
 (define (num-to-box-number num)
@@ -44,16 +60,10 @@
     ((7 8 9) 3)))
 
 (define (cell-box-calc row col)
-  (cons (num-to-box-number row) (num-to-box-number col)))
-
-(define (scand-cell-pos cell)
-  (car cell))
-
-(define (scand-cell-value cell)
-  (cdr cell))
+  (make-box (num-to-box-number row) (num-to-box-number col)))
 
 (define (scand-init row col n)
-  (cons (list row col (cell-box-calc row col)) n))
+  (make-scand (make-pos row col (cell-box-calc row col)) n))
 
 (define (str-to-solved grid)
   (let loop ((i 1) (j 1) (solved '()) (tmp (string->list grid)))
@@ -83,13 +93,13 @@
   (equal? pos1 pos2))
 
 (define (pos-same-box? pos1 pos2)
-  (equal? (third pos1) (third pos2)))
+  (equal? (pos-box pos1) (pos-box pos2)))
 
 (define (pos-same-col? pos1 pos2)
-  (= (second pos1) (second pos2)))
+  (= (pos-col pos1) (pos-col pos2)))
 
 (define (pos-same-row? pos1 pos2)
-  (= (first pos1) (first  pos2)))
+  (= (pos-row pos1) (pos-row pos2)))
 
 (define (pos-sees? pos1 pos2)
   (or (pos-same-box? pos1 pos2)
@@ -100,24 +110,25 @@
   (let ((box (if (integer? box)
                   (box-number-to-index box)
                   box)))
-    (filter (match-lambda [((r c b) . n) (equal? box b)] [_ #f]) cands)))
+    (filter (match-lambda [($ scand pos val)
+                           (equal? box (pos-box pos))]) cands)))
 
 (define (scand-get-cell pos cands)
-  (filter (match-lambda [(p . n) (equal? pos p)] [_ #f]) cands))
+  (filter (match-lambda [($ scand p val) (equal? pos p)]) cands))
 
 (define (scand-get-col col cands)
-  (filter (match-lambda [((r c (a . b)) . n) (= col c)] [_ #f]) cands))
+  (filter (match-lambda [($ scand pos val) (= col (pos-col pos))]) cands))
 
 (define (scand-get-row row cands)
-  (filter (match-lambda [((r c (a . b)) . n) (= row r)] [_ #f]) cands))
+  (filter (match-lambda [($ scand pos val) (= row (pos-row pos))]) cands))
 
 (define (unique-positions-gen cands)
   ;; (unique (map (lambda (cell) (first cell)) cands)))
   (gdelete-neighbor-dups
-   (list->generator (map (lambda (cell) (first cell)) cands))))
+   (list->generator (map (lambda (cell) (scand-pos cell)) cands))))
 
 (define (numbers cands)
-  (sort (map cdr cands) <))
+  (sort (map scand-value cands) <))
 
 (define (delete-neighbour-dups = numbers)
   (let ((nil (gensym)))
@@ -151,18 +162,18 @@
    (list->generator (numbers cands))))
 
 (define (pos-less? pos1 pos2)
-  (cond ((< (first pos1) (first pos2)) #t)
-        ((= (first pos1) (first pos2))
-         (cond ((< (second pos1) (second pos2)) #t)
+  (cond ((< (pos-row pos1) (pos-row pos2)) #t)
+        ((= (pos-row pos1) (pos-row pos2))
+         (cond ((< (pos-col pos1) (pos-col pos2)) #t)
                (else #f)))
         (else #f)))
 
 (define (scand-less? cell1 cell2)
-  (cond ((< (first (car cell1)) (first (car cell2))) #t)
-        ((= (first (car cell1)) (first (car cell2)))
-         (cond ((< (second (car cell1)) (second (car cell2))) #t)
-               ((= (second (car cell1)) (second (car cell2)))
-                (< (cdr cell1) (cdr cell2)))
+  (cond ((< (pos-row (scand-pos cell1)) (pos-row (scand-pos cell2))) #t)
+        ((= (pos-row (scand-pos cell1)) (pos-row (scand-pos cell2)))
+         (cond ((< (pos-col (scand-pos cell1)) (pos-col (scand-pos cell2))) #t)
+               ((= (pos-col (scand-pos cell1)) (pos-col (scand-pos cell2)))
+                (< (scand-value cell1) (scand-value cell2)))
                (else #f)))
         (else #f)))
 
@@ -170,22 +181,19 @@
   (delete-neighbour-dups equal? (sort cands scand-less?)))
 
 (define (scand-same-pos? cell1 cell2)
-  (equal? (car cell1) (car cell2)))
+  (equal? (scand-pos cell1) (scand-pos cell2)))
 
 (define (scand-same-val? cell1 cell2)
-  (= (cdr cell1) (cdr cell2)))
+  (= (scand-value cell1) (scand-value cell2)))
 
 (define (scand-cell-sees? cell1 cell2)
-  (pos-sees? (car cell1) (car cell2)))
-
-(define (scand-pos cell)
-  (car cell))
+  (pos-sees? (scand-pos cell1) (scand-pos cell2)))
 
 (define (scand-cell-row cell)
-  (first (scand-cell-pos cell)))
+  (pos-row (scand-pos cell)))
 
 (define (scand-cell-col cell)
-  (second (scand-cell-pos cell)))
+  (pos-col (scand-pos cell)))
 
 (define (cells-in-col? xs)
   (match xs
@@ -212,9 +220,9 @@
         cands
         (let* ((cell1 (car xs))
                (rest (cdr xs))
-               (pos1 (scand-cell-pos cell1))
+               (pos1 (scand-pos cell1))
                (pred (lambda (cell2)
-                       (let ((pos2 (scand-cell-pos cell2)))
+                       (let ((pos2 (scand-pos cell2)))
                          (or (pos-same? pos1 pos2) ;; cell is solved
                              (and (pos-sees? pos1 pos2)
                                   (scand-same-val? cell1 cell2))))))
@@ -273,7 +281,7 @@
                 (lambda (n res)
                   (match
                    (generator->list
-                    (gfilter (lambda (cell) (= n (cdr cell)))
+                    (gfilter (lambda (cell) (= n (scand-value cell)))
                              (list->generator cands)))
                    [() res]
                    [(cell) (cons (cons cell (car res)) '())]
@@ -292,7 +300,7 @@
             (else #f)))))
 
 (define (cell-numbers-for-pos pos cands)
-  (map (lambda (cell) (cdr cell)) (scand-get-cell pos cands)))
+  (map (lambda (cell) (scand-value cell)) (scand-get-cell pos cands)))
 
 (define (find-cells-cond pred cands)
   (let* ((poss (generator->list (unique-positions-gen cands)))
@@ -336,8 +344,8 @@
                             (append found
                                     (filter
                                      (lambda (cell)
-                                       (and (find (lambda (x) (= x (scand-cell-value cell))) perm)
-                                            (not (find (lambda (x) (equal? x (scand-cell-pos cell))) positions))))
+                                       (and (find (lambda (x) (= x (scand-value cell))) perm)
+                                            (not (find (lambda (x) (equal? x (scand-pos cell))) positions))))
                                      cands))))
                     (loop permgen found)))]))))))
 
@@ -378,7 +386,7 @@
                                 (not
                                  (any
                                   (lambda (x)
-                                    (= x (scand-cell-value cell)))
+                                    (= x (scand-value cell)))
                                   perm)))
                               cands))
                      (positions (generator->list
@@ -400,11 +408,11 @@
                               (lambda (cell)
                                 (and (not (any
                                            (lambda (val)
-                                             (= val (scand-cell-value cell)))
+                                             (= val (scand-value cell)))
                                            perm))
                                      (any
                                       (lambda (pos)
-                                        (equal? pos (scand-cell-pos cell)))
+                                        (equal? pos (scand-pos cell)))
                                       positions)))
                               cands))))
                     (loop permgen found)))])))))))
@@ -431,7 +439,7 @@
                  ['() (loop rest nfound)]
                  [(n . nrest)
                   (let ((xs (filter (lambda (cell)
-                                      (= n (scand-cell-value cell)))
+                                      (= n (scand-value cell)))
                                     box)))
                     (if (not (and (or (= (length xs) 2)
                                       (= (length xs) 3))
@@ -443,14 +451,14 @@
                                        (scand-get-col
                                         (scand-cell-col (first xs))
                                         cands)))
-                               (positions (map scand-cell-pos xs))
+                               (positions (map scand-pos xs))
                                (nnfound (filter
                                          (lambda (cell)
-                                           (and (= n (scand-cell-value cell))
+                                           (and (= n (scand-value cell))
                                                 (not (any (lambda (pos)
                                                             (equal?
                                                              pos
-                                                             (scand-cell-pos cell)))
+                                                             (scand-pos cell)))
                                                           positions))))
                                          ys)))
                           (match nnfound
@@ -463,7 +471,7 @@
     [(cell0 . '()) #t]
     [(cell0 . cells)
      (every (lambda (cell)
-              (pos-same-box? (scand-cell-pos cell0) (scand-cell-pos cell)))
+              (pos-same-box? (scand-pos cell0) (scand-pos cell)))
             cells)]))
 
 ;; 2 or 3 candidates of a number in the same line and box,
@@ -476,7 +484,7 @@
         (lambda (cset cands)
           (let* ((fun (lambda (n)
                         (filter (lambda (cell)
-                                  (= n (scand-cell-value cell))) cset)))
+                                  (= n (scand-value cell))) cset)))
                  (num-occurrances (remove (lambda (n-cells)
                                            (null? (cdr n-cells)))
                                          (map (lambda (n) (cons n (fun n)))
@@ -491,12 +499,12 @@
                  (results (map (lambda (foo)
                                  (let* ((n (car foo))
                                         (cells (cdr foo))
-                                        (b (third (scand-cell-pos (first cells))))
+                                        (b (pos-box (scand-pos (first cells))))
                                         (box-cells (scand-get-box b cands))
                                         (other (filter
                                                 (lambda (cell)
                                                   (and
-                                                   (= n (scand-cell-value cell))
+                                                   (= n (scand-value cell))
                                                    (not (find (lambda (x) (equal? x cell)) cells))))
                                                 box-cells)))
                                    other)) interesting)))
@@ -527,8 +535,8 @@
 
 (define (is-ywing? pivot wing1 wing2)
   (cond
-   ((not (and (scand-cell-sees? pivot wing1)
-              (scand-cell-sees? pivot wing2))) #f)
+   ((not (and (pos-sees? (car pivot) (car wing1))
+              (pos-sees? (car pivot) (car wing2)))) #f)
    ((not (= 3 (length (delete-neighbour-dups
                        = (sort (append-map (lambda (cell)
                                              (cdr cell))
@@ -597,8 +605,8 @@
                                          (cons (car x) res))
                                        '() (list pivot wing1 wing2)))
                            (xs (filter (lambda (cell)
-                                         (let ((pos (scand-cell-pos cell)))
-                                           (and (= n (scand-cell-value cell))
+                                         (let ((pos (scand-pos cell)))
+                                           (and (= n (scand-value cell))
                                                 (every
                                                  (lambda (pos2)
                                                    (not (equal? pos pos2)))
