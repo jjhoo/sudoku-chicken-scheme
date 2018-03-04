@@ -150,6 +150,13 @@
   (gdelete-neighbor-dups
    (list->generator (numbers cands))))
 
+(define (pos-less? pos1 pos2)
+  (cond ((< (first pos1) (first pos2)) #t)
+        ((= (first pos1) (first pos2))
+         (cond ((< (second pos1) (second pos2)) #t)
+               (else #f)))
+        (else #f)))
+
 (define (scand-less? cell1 cell2)
   (cond ((< (first (car cell1)) (first (car cell2))) #t)
         ((= (first (car cell1)) (first (car cell2)))
@@ -241,11 +248,6 @@
          ;; [xxx (begin (print "wtf " xxx ) (cons solved eliminated))]
            ))]))))
 
-;; (for (i 1 9)
-  ;;      (dolist (fun2 funs2)
-    ;;              (set 'found (append found (pred (fun2 i cands))))))
-    ;; (unique (sort found))))
-
 ;; Find unsolved cells that have only one candidate left
 (define (find-singles-simple solved cands)
   (print "Hidden singles (simple)")
@@ -298,6 +300,9 @@
                           (cons pos (cell-numbers-for-pos pos cands)))
                         poss)))
     (filter (lambda (pos-num-p) (pred (cdr pos-num-p))) pos-nums)))
+
+(define (find-cells-with-n-candidates limit cands)
+  (find-cells-cond (lambda (numbers) (= limit (length numbers))) cands))
 
 (define (find-naked-groups-in-set limit cands)
   (if (< (length (generator->list (unique-positions-gen cands))) (+ limit 1))
@@ -513,6 +518,105 @@
            [() (loop g found)]
            [xs (loop g (append found xs))])]))))
 
+(define (is-ywing-numbers-comb? pivot winga wingb)
+  (equal? (cdr pivot)
+          (sort (lset-difference
+                 =
+                 (lset-union = (cdr winga) (cdr wingb))
+                 (lset-intersection = (cdr winga) (cdr wingb))) <)))
+
+(define (is-ywing? pivot wing1 wing2)
+  (cond
+   ((not (and (scand-cell-sees? pivot wing1)
+              (scand-cell-sees? pivot wing2))) #f)
+   ((not (= 3 (length (delete-neighbour-dups
+                       = (sort (append-map (lambda (cell)
+                                             (cdr cell))
+                                           (list pivot wing1 wing2))
+                               <))))) #f)
+   (else (is-ywing-numbers-comb? pivot wing1 wing2))))
+
+;; three cells wing1-pivot-wing2
+;; with values  AC-AB-BC
+;; -> C eliminated from cells seen by wing1 and wing2
+(define (find-ywing solved cands)
+  (print "Y-wing")
+  (let* ((pairs (find-cells-with-n-candidates 2 cands))
+         (good-comb-fun
+          (lambda (comb)
+            ;; (print "Inspect comb " comb)
+            (let ((numbers
+                   (delete-neighbour-dups
+                    = (sort (fold (lambda (n-cell res)
+                                    (append res (cdr n-cell)))
+                                  '() comb) <))))
+              (and (= 3 (length numbers))
+                   (every (lambda (n)
+                            (= 2 (length
+                                  (filter (lambda (x)
+                                            (= n x))
+                                          (fold (lambda (n-cell res)
+                                                  (append res (cdr n-cell)))
+                                                '() comb)))))
+                          numbers)))))
+         (combs (reverse
+                 (map
+                  (lambda (comb)
+                    (sort comb (lambda (a b) (pos-less? (car a) (car b)))))
+                  (combination-fold (lambda (comb res)
+                                      (if (good-comb-fun comb)
+                                          (cons comb res)
+                                          res))
+                                    '() pairs 3)))))
+    ;; (print "Pairs " pairs)
+    ;; (print "Combinations for " (length pairs)
+    ;;        " pairs, filtered combinations " (length combs))
+    ;; (for-each (lambda (c) (print " comb " c)) combs)
+    (let loop ((cs combs) (found '()))
+      (match cs
+        ['()
+         (let ((tmp (delete-neighbour-dups equal? (sort found scand-less?))))
+           ;; (print "Y-wing return " tmp)
+           (cons '() tmp))]
+        [(combo . rest)
+         (loop
+          rest
+          (append
+           found
+           (permutation-fold
+            (lambda (perm res)
+              (let* ((wing1 (first perm))
+                     (pivot (second perm))
+                     (wing2 (third perm)))
+                ;; (print "Inspect perm " wing1 " - " pivot " - " wing2)
+                (if (not (is-ywing? pivot wing1 wing2))
+                    res
+                    (let* ((n (first (lset-intersection
+                                      = (cdr wing1) (cdr wing2))))
+                           (poss (fold (lambda (x res)
+                                         (cons (car x) res))
+                                       '() (list pivot wing1 wing2)))
+                           (xs (filter (lambda (cell)
+                                         (let ((pos (scand-cell-pos cell)))
+                                           (and (= n (scand-cell-value cell))
+                                                (every
+                                                 (lambda (pos2)
+                                                   (not (equal? pos pos2)))
+                                                 poss)
+                                                (pos-sees? (car wing1) pos)
+                                                (pos-sees? (car wing2) pos))))
+                                       cands)))
+                      ;; (print "Possible y-wing")
+                      (match xs
+                        ['() res]
+                        [(a . as)
+                         (begin
+                           ;; (print "Is a y-wing perm! " wing1 " - " pivot " - " wing2)
+                           ;; (print "   maybe eliminate (" n ") << " xs " >>")
+                           ;; (print " c       " perm)
+                           (append res xs))])))))
+            '() combo 3)))]))))
+
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -541,6 +645,7 @@
                    (lambda (solved cands) (find-hidden-groups 4 solved cands))
                    find-pointing-pairs
                    find-box/line-reduction
+                   find-ywing
                    )))
         (let loop ((fgen (list->generator funs)))
           (match
