@@ -40,7 +40,7 @@
      (let loop ()
        (match (gen1)
               [#!eof (yield #!eof)]
-              [i (let loop2 ((gen2 (gen2-init)))
+              [i (let loop2 ((gen2 (gen2-init i)))
                    (match (gen2)
                           [#!eof (loop)]
                           [j (yield (yfun i j))
@@ -234,7 +234,7 @@
          (gen (make-2d-generator
                yfun
                (make-iota-generator 9 1)
-               (lambda ()
+               (lambda (i)
                  (list->generator (list scand-get-row
                                         scand-get-col
                                         scand-get-box))))))
@@ -516,7 +516,7 @@
        (gen (make-2d-generator
              (lambda (i fun) (cons i fun))
              (list->generator (list scand-get-row scand-get-col))
-             (lambda () (make-iota-generator 9 1)))))
+             (lambda (i) (make-iota-generator 9 1)))))
     (let loop ((g gen) (found '()))
       (match (g)
         [#!eof (cons '() found)]
@@ -625,6 +625,134 @@
                            (append res xs))])))))
             '() combo 3)))]))))
 
+(define (find-xwing solved cands)
+  (print "X-wing")
+  (let* ((ijgen (make-2d-generator
+                 (lambda (i j) (cons i j))
+                 (make-iota-generator 8 1)
+                 (lambda (i) (make-iota-generator (- 9 i) (+ i 1)))))
+         (relim (lambda (xset cands)
+                  (match
+                      xset
+                    [(($ scand ($ pos i1 j1 _) n) ($ scand ($ pos i1 j2 _) n)
+                      ($ scand ($ pos i2 j1 _) n) ($ scand ($ pos i2 j2 _) n))
+                     (filter (lambda (cell)
+                               (and (= n (scand-value cell))
+                                    (not (= i1 (pos-row (scand-pos cell))))
+                                    (not (= i2 (pos-row (scand-pos cell))))
+                                    (or
+                                     (= j1 (pos-col (scand-pos cell)))
+                                     (= j2 (pos-col (scand-pos cell))))))
+                             cands)])))
+         (celim (lambda (xset cands)
+                  (match
+                      xset
+                    [(($ scand ($ pos i1 j1 _) n) ($ scand ($ pos i2 j1 _) n)
+                      ($ scand ($ pos i1 j2 _) n) ($ scand ($ pos i2 j2 _) n))
+                     (filter (lambda (cell)
+                               (and (= n (scand-value cell))
+                                    (not (= j1 (pos-col (scand-pos cell))))
+                                    (not (= j2 (pos-col (scand-pos cell))))
+                                    (or
+                                     (= i1 (pos-row (scand-pos cell)))
+                                     (= i2 (pos-row (scand-pos cell))))))
+                             cands)])))
+         (rowfun (lambda (i j cands)
+                   (let* ((is (scand-get-row i cands))
+                          (js (scand-get-row j cands))
+                          (goodset
+                           (lambda (n is js)
+                             (let* ((nis (filter
+                                          (lambda (cell)
+                                            (= n (scand-value cell)))
+                                          is))
+                                    (njs (filter
+                                          (lambda (cell)
+                                            (= n (scand-value cell)))
+                                          js)))
+                               (cond ((and (= 2 (length nis))
+                                           (= 2 (length njs)))
+                                      (match
+                                          (map scand-pos (append nis njs))
+                                        [(($ pos i1 j1 _)
+                                          ($ pos i1 j2 _)
+                                          ($ pos i2 j1 _)
+                                          ($ pos i2 j2 _))
+                                         (append nis njs)]
+                                        [_ '()]))
+                                     (else '()))))))
+                     (cond ((> 2 (length is)) '())
+                           ((> 2 (length js)) '())
+                           (else
+                            (let nloop ((ns (iota 9 1)) (found '()))
+                              (match ns
+                                ['() found]
+                                [(n . nrest)
+                                 (match
+                                     (goodset n is js)
+                                   ['() (nloop nrest found)]
+                                   [(c1 c2 c3 c4)
+                                    (nloop nrest
+                                           (append found
+                                                   (relim (list c1 c2 c3 c4)
+                                                          cands)))])])))))))
+         (colfun (lambda (i j cands)
+                   (let* ((is (scand-get-col i cands))
+                          (js (scand-get-col j cands))
+                          (goodset
+                           (lambda (n is js)
+                             (let* ((nis (filter
+                                          (lambda (cell)
+                                            (= n (scand-value cell)))
+                                          is))
+                                    (njs (filter
+                                          (lambda (cell)
+                                            (= n (scand-value cell)))
+                                          js)))
+                               (cond ((and (= 2 (length nis))
+                                           (= 2 (length njs)))
+                                      (match
+                                          (map scand-pos (append nis njs))
+                                        [(($ pos i1 j1 _)
+                                          ($ pos i2 j1 _)
+                                          ($ pos i1 j2 _)
+                                          ($ pos i2 j2 _))
+                                         (append nis njs)]
+                                        [_ '()]))
+                                     (else '()))))))
+                     (cond ((> 2 (length is)) '())
+                           ((> 2 (length js)) '())
+                           (else
+                            (let nloop ((ns (iota 9 1)) (found '()))
+                              (match ns
+                                ['() found]
+                                [(n . nrest)
+                                 (match
+                                     (goodset n is js)
+                                   ['() (nloop nrest found)]
+                                   [(c1 c2 c3 c4)
+                                    (nloop nrest
+                                           (append found
+                                                   (celim (list c1 c2 c3 c4)
+                                                          cands)))])])))))))
+         (gen (make-2d-generator
+               (lambda (f ij) (cons f ij))
+               (list->generator (list rowfun colfun))
+               (lambda (f)
+                 (make-2d-generator
+                  (lambda (i j) (cons i j))
+                  (make-iota-generator 8 1)
+                  (lambda (i) (make-iota-generator (- 9 i) (+ i 1))))))))
+    (cons
+     '()
+     (let loop ((found '()))
+       (match (gen)
+         [#!eof found]
+         [(f . (i . j))
+          (begin
+            ;; (print "  (f, i, j) = (" f ", " i ", " j ")")
+            (loop (append found (f i j cands)))) ])))))
+
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -653,6 +781,7 @@
                    (lambda (solved cands) (find-hidden-groups 4 solved cands))
                    find-pointing-pairs
                    find-box/line-reduction
+                   find-xwing
                    find-ywing
                    )))
         (let loop ((fgen (list->generator funs)))
@@ -686,7 +815,7 @@
        (number-counts ns 3))
 
 ;; This has box/line reduction, simple colouring and y-wing
-(define GRID "000040700500780020070002006810007900460000051009600078900800010080064009002050000")
+;; (define GRID "000040700500780020070002006810007900460000051009600078900800010080064009002050000")
 ;; needs naked triple, y-wing
 ;; (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
 ;; can proceed with hidden pair
@@ -697,6 +826,8 @@
 ;; (define GRID "000004910009003520050100840000306080000000000070209000037008060085400700014700000")
 ;; has pointing pairs and box/line
 ;; (define GRID "000921003009000060000000500080403006007000800500700040003000000020000700800195000")
+;; has x-wing
+(define GRID "700600008800030000090000310006740005005806900400092100087000020000060009600008001")
 (print GRID)
 
 (define solved (str-to-solved GRID))
