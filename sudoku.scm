@@ -21,6 +21,7 @@
 (define-record box row col)
 (define-record pos row col box)
 (define-record scand pos value)
+(define-record find-result solved eliminated)
 
 (define-record-printer (box value out)
   (fprintf out "(box ~s ~s)"
@@ -238,56 +239,54 @@
                  (list->generator (list scand-get-row
                                         scand-get-col
                                         scand-get-box))))))
-    (let loop ((solved '())
-               (eliminated '()))
+    (let loop ((solved '()) (eliminated '()))
       (match
        (gen)
-       [#!eof (cons (cands-sort+dedupe solved) (cands-sort+dedupe eliminated))]
+       [#!eof (make-find-result (cands-sort+dedupe solved)
+                                (cands-sort+dedupe eliminated))]
        [(i . f)
         (begin
           ;; (print "Now i = " i ", fun is " f)
-          (match
-           (pred (f i cands))
-           [(() . ())
-            (loop solved eliminated)]
-           [(nsolved . neliminated)
-            (loop (append solved nsolved)
-                  (append eliminated neliminated)) ]
-         ;; [xxx (begin (print "wtf " xxx ) (cons solved eliminated))]
-           ))]))))
+          (let ((res (pred (f i cands))))
+            (loop (append solved (find-result-solved res))
+                  (append eliminated (find-result-eliminated res)))))]))))
 
 ;; Find unsolved cells that have only one candidate left
 (define (find-singles-simple solved cands)
   (print "Hidden singles (simple)")
   (let ((fun (lambda (cands)
-               (generator-fold
-                (lambda (pos res)
-                  (match
-                   (generator->list
-                    (gfilter (lambda (cell)
-                               (pos-same? pos (scand-pos cell)))
-                             (list->generator cands)))
-                   [() res]
-                   [(cell) (cons (cons cell (car res)) '())]
-                   [_ res]))
-                (cons '() '())
-                (unique-positions-gen cands)))))
+               (make-find-result
+                (generator-fold
+                 (lambda (pos res)
+                   (match
+                       (generator->list
+                        (gfilter (lambda (cell)
+                                   (pos-same? pos (scand-pos cell)))
+                                 (list->generator cands)))
+                     [() res]
+                     [(cell) (cons cell res)]
+                     [_ res]))
+                 '()
+                 (unique-positions-gen cands))
+                '()))))
     (finder fun cands)))
 
 (define (find-singles solved cands)
   (print "Hidden singles")
   (let ((fun (lambda (cands)
-               (generator-fold
-                (lambda (n res)
-                  (match
-                   (generator->list
-                    (gfilter (lambda (cell) (= n (scand-value cell)))
-                             (list->generator cands)))
-                   [() res]
-                   [(cell) (cons (cons cell (car res)) '())]
-                   [xxx res]))
-                (cons '() '())
-                (unique-numbers-gen cands)))))
+               (make-find-result
+                (generator-fold
+                 (lambda (n res)
+                   (match
+                       (generator->list
+                        (gfilter (lambda (cell) (= n (scand-value cell)))
+                                 (list->generator cands)))
+                     [() res]
+                     [(cell) (cons cell res)]
+                     [xxx res]))
+                 '()
+                 (unique-numbers-gen cands))
+                '()))))
     (finder fun cands)))
 
 (define (list-less? < =)
@@ -315,7 +314,7 @@
 (define (find-naked-groups-in-set limit cands)
   (if (< (length (generator->list (unique-positions-gen cands))) (+ limit 1))
       ;; (print "Early return " (generator->list (unique-positions-gen cands)))
-      (cons '() '())
+      (make-find-result '() '())
       (begin
         (let* ((nums (numbers cands))
                (ncounts (number-counts nums))
@@ -330,7 +329,7 @@
           (let loop ((permgen (list->generator kperms)) (found '()))
             (match
              (permgen)
-             [#!eof (cons '() found)]
+             [#!eof (make-find-result '() found)]
              [perm
               (let* ((foos (find-cells-cond
                             (lambda (numbers)
@@ -360,14 +359,14 @@
      (if (< (length (generator->list (unique-positions-gen cands)))
             (+ limit 1))
          ;; (print "Early return " (generator->list (unique-positions-gen cands)))
-         (ret/cc (cons '() '())))
+         (ret/cc (make-find-result '() '())))
      (let* ((nums (numbers cands))
             (ncounts (number-counts-cond
                       (lambda (len) (and (>= len 2) (<= len limit)))
                       nums))
             (unums (map (lambda (x) (first x)) ncounts)))
        (if (< (length unums) limit)
-           (ret/cc (cons '() '())))
+           (ret/cc (make-find-result '() '())))
 
        ;; (print "Unums " unums ", ncounts " ncounts ", cands " cands)
        (let ((kperms (sort (unordered-subset-map
@@ -379,7 +378,7 @@
          (let loop ((permgen (list->generator kperms)) (found '()))
            (match
                (permgen)
-             [#!eof (ret/cc (cons '() found))]
+             [#!eof (ret/cc (make-find-result '() found))]
              [perm
               (let* ((ncands (remove
                               (lambda (cell)
@@ -429,7 +428,7 @@
   (print "Pointing pairs")
   (let loop ((bs (iota 9 1)) (found '()))
     (match bs
-      ['() (cons '() found)]
+      ['() (make-find-result '() found)]
       [(b . rest)
        (let ((box (scand-get-box b cands)))
          (if (< (length box) 2)
@@ -519,7 +518,7 @@
              (lambda (i) (make-iota-generator 9 1)))))
     (let loop ((g gen) (found '()))
       (match (g)
-        [#!eof (cons '() found)]
+        [#!eof (make-find-result '() found)]
         [(fun . i)
          (match
              (setfun (fun i cands) cands)
@@ -585,7 +584,7 @@
         ['()
          (let ((tmp (delete-neighbour-dups equal? (sort found scand-less?))))
            ;; (print "Y-wing return " tmp)
-           (cons '() tmp))]
+           (make-find-result '() tmp))]
         [(combo . rest)
          (loop
           rest
@@ -743,7 +742,7 @@
                   (lambda (i j) (cons i j))
                   (make-iota-generator 8 1)
                   (lambda (i) (make-iota-generator (- 9 i) (+ i 1))))))))
-    (cons
+    (make-find-result
      '()
      (let loop ((found '()))
        (match (gen)
@@ -787,15 +786,15 @@
         (let loop ((fgen (list->generator funs)))
           (match
            (fgen)
-           [#!eof (cons solved cands)]
+           [#!eof (make-find-result solved cands)]
            [f (match
-               (f solved cands)
-               [(() . ()) (loop fgen)]
-               [(() . eliminated)
+                  (f solved cands)
+               [($ find-result () ()) (loop fgen)]
+               [($ find-result () eliminated)
                 (begin
                   (print "Eliminated " eliminated)
                   (solver solved (lset-xor equal? cands eliminated)))]
-               [(nsolved . eliminated)
+               [($ find-result nsolved eliminated)
                 (begin
                   (print "Found some solutions? " nsolved)
                   (solver (merge solved nsolved scand-less?)
