@@ -51,8 +51,7 @@
   (match num
     [1 (make-box 1 1)] [2 (make-box 1 2)] [3 (make-box 1 3)]
     [4 (make-box 2 1)] [5 (make-box 2 2)] [6 (make-box 2 3)]
-    [7 (make-box 3 1)] [8 (make-box 3 2)] [9 (make-box 3 3)]
-    [_ "invalid"]))
+    [7 (make-box 3 1)] [8 (make-box 3 2)] [9 (make-box 3 3)]))
 
 (define (num-to-box-number num)
   (case num
@@ -107,9 +106,12 @@
       (pos-same-col? pos1 pos2)
       (pos-same-row? pos1 pos2)))
 
+(define (scand-filter-value n cands)
+  (filter (lambda (cell) (= n (scand-value cell))) cands))
+
 (define (scand-get-box box cands)
   (let ((box (if (integer? box)
-                  (box-number-to-index box)
+                 (box-number-to-index box)
                   box)))
     (filter (match-lambda [($ scand pos val)
                            (equal? box (pos-box pos))]) cands)))
@@ -126,7 +128,7 @@
 (define (unique-positions-gen cands)
   ;; (unique (map (lambda (cell) (first cell)) cands)))
   (gdelete-neighbor-dups
-   (list->generator (map (lambda (cell) (scand-pos cell)) cands))))
+   (list->generator (map scand-pos cands))))
 
 (define (numbers cands)
   (sort (map scand-value cands) <))
@@ -299,7 +301,7 @@
             (else #f)))))
 
 (define (cell-numbers-for-pos pos cands)
-  (map (lambda (cell) (scand-value cell)) (scand-get-cell pos cands)))
+  (map scand-value (scand-get-cell pos cands)))
 
 (define (find-cells-cond pred cands)
   (let* ((poss (generator->list (unique-positions-gen cands)))
@@ -318,7 +320,7 @@
       (begin
         (let* ((nums (numbers cands))
                (ncounts (number-counts nums))
-               (unums (map (lambda (x) (first x)) ncounts))
+               (unums (map first ncounts))
                (kperms (sort (unordered-subset-map
                               (lambda (c) (sort c <))
                               unums limit)
@@ -337,7 +339,7 @@
                                   (eq? '() (lset-difference equal? numbers perm))))
                             cands)))
                 (if (= (length foos) limit)
-                    (let ((positions (map (lambda (cell) (first cell)) foos)))
+                    (let ((positions (map scand-pos foos)))
                       ;; (print "Found something? " perm " " foos)
                       (loop permgen
                             (append found
@@ -364,7 +366,7 @@
             (ncounts (number-counts-cond
                       (lambda (len) (and (>= len 2) (<= len limit)))
                       nums))
-            (unums (map (lambda (x) (first x)) ncounts)))
+            (unums (map first ncounts)))
        (if (< (length unums) limit)
            (ret/cc (make-find-result '() '())))
 
@@ -437,9 +439,7 @@
                (match nums
                  ['() (loop rest nfound)]
                  [(n . nrest)
-                  (let ((xs (filter (lambda (cell)
-                                      (= n (scand-value cell)))
-                                    box)))
+                  (let ((xs (scand-filter-value n box)))
                     (if (not (and (or (= (length xs) 2)
                                       (= (length xs) 3))
                                   (cells-in-line? xs)))
@@ -481,9 +481,7 @@
   (let*
       ((setfun
         (lambda (cset cands)
-          (let* ((fun (lambda (n)
-                        (filter (lambda (cell)
-                                  (= n (scand-value cell))) cset)))
+          (let* ((fun (lambda (n) (scand-filter-value n cset)))
                  (num-occurrances (remove (lambda (n-cells)
                                            (null? (cdr n-cells)))
                                          (map (lambda (n) (cons n (fun n)))
@@ -537,9 +535,7 @@
    ((not (and (pos-sees? (car pivot) (car wing1))
               (pos-sees? (car pivot) (car wing2)))) #f)
    ((not (= 3 (length (delete-neighbour-dups
-                       = (sort (append-map (lambda (cell)
-                                             (cdr cell))
-                                           (list pivot wing1 wing2))
+                       = (sort (append-map cdr (list pivot wing1 wing2))
                                <))))) #f)
    (else (is-ywing-numbers-comb? pivot wing1 wing2))))
 
@@ -554,17 +550,13 @@
             ;; (print "Inspect comb " comb)
             (let ((numbers
                    (delete-neighbour-dups
-                    = (sort (fold (lambda (n-cell res)
-                                    (append res (cdr n-cell)))
-                                  '() comb) <))))
+                    = (sort (append-map cdr comb) <))))
               (and (= 3 (length numbers))
                    (every (lambda (n)
                             (= 2 (length
                                   (filter (lambda (x)
                                             (= n x))
-                                          (fold (lambda (n-cell res)
-                                                  (append res (cdr n-cell)))
-                                                '() comb)))))
+                                          (append-map cdr comb)))))
                           numbers)))))
          (combs (reverse
                  (map
@@ -600,9 +592,7 @@
                     res
                     (let* ((n (first (lset-intersection
                                       = (cdr wing1) (cdr wing2))))
-                           (poss (fold (lambda (x res)
-                                         (cons (car x) res))
-                                       '() (list pivot wing1 wing2)))
+                           (poss (map car (list pivot wing1 wing2)))
                            (xs (filter (lambda (cell)
                                          (let ((pos (scand-pos cell)))
                                            (and (= n (scand-value cell))
@@ -661,22 +651,14 @@
                           (js (scand-get-row j cands))
                           (goodset
                            (lambda (n is js)
-                             (let* ((nis (filter
-                                          (lambda (cell)
-                                            (= n (scand-value cell)))
-                                          is))
-                                    (njs (filter
-                                          (lambda (cell)
-                                            (= n (scand-value cell)))
-                                          js)))
+                             (let* ((nis (scand-filter-value n is))
+                                    (njs (scand-filter-value n js)))
                                (cond ((and (= 2 (length nis))
                                            (= 2 (length njs)))
                                       (match
                                           (map scand-pos (append nis njs))
-                                        [(($ pos i1 j1 _)
-                                          ($ pos i1 j2 _)
-                                          ($ pos i2 j1 _)
-                                          ($ pos i2 j2 _))
+                                        [(($ pos i1 j1 _) ($ pos i1 j2 _)
+                                          ($ pos i2 j1 _) ($ pos i2 j2 _))
                                          (append nis njs)]
                                         [_ '()]))
                                      (else '()))))))
@@ -700,22 +682,14 @@
                           (js (scand-get-col j cands))
                           (goodset
                            (lambda (n is js)
-                             (let* ((nis (filter
-                                          (lambda (cell)
-                                            (= n (scand-value cell)))
-                                          is))
-                                    (njs (filter
-                                          (lambda (cell)
-                                            (= n (scand-value cell)))
-                                          js)))
+                             (let* ((nis (scand-filter-value n is))
+                                    (njs (scand-filter-value n js)))
                                (cond ((and (= 2 (length nis))
                                            (= 2 (length njs)))
                                       (match
                                           (map scand-pos (append nis njs))
-                                        [(($ pos i1 j1 _)
-                                          ($ pos i2 j1 _)
-                                          ($ pos i1 j2 _)
-                                          ($ pos i2 j2 _))
+                                        [(($ pos i1 j1 _) ($ pos i2 j1 _)
+                                          ($ pos i1 j2 _) ($ pos i2 j2 _))
                                          (append nis njs)]
                                         [_ '()]))
                                      (else '()))))))
