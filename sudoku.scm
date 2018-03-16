@@ -113,17 +113,16 @@
   (let ((box (if (integer? box)
                  (box-number-to-index box)
                   box)))
-    (filter (match-lambda [($ scand pos val)
-                           (equal? box (pos-box pos))]) cands)))
+    (filter (lambda (cell) (equal? box (pos-box (scand-pos cell)))) cands)))
 
 (define (scand-get-cell pos cands)
-  (filter (match-lambda [($ scand p val) (equal? pos p)]) cands))
+  (filter (lambda (cell) (equal? pos (scand-pos cell))) cands))
 
 (define (scand-get-col col cands)
-  (filter (match-lambda [($ scand pos val) (= col (pos-col pos))]) cands))
+  (filter (lambda (cell) (= col (pos-col (scand-pos cell)))) cands))
 
 (define (scand-get-row row cands)
-  (filter (match-lambda [($ scand pos val) (= row (pos-row pos))]) cands))
+  (filter (lambda (cell) (= row (pos-row (scand-pos cell)))) cands))
 
 (define (unique-positions-gen cands)
   ;; (unique (map (lambda (cell) (first cell)) cands)))
