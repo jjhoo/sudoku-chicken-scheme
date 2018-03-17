@@ -338,7 +338,7 @@
                                   (eq? '() (lset-difference equal? numbers perm))))
                             cands)))
                 (if (= (length foos) limit)
-                    (let ((positions (map scand-pos foos)))
+                    (let ((positions (map car foos)))
                       ;; (print "Found something? " perm " " foos)
                       (loop permgen
                             (append found
@@ -759,7 +759,7 @@
         (let loop ((fgen (list->generator funs)))
           (match
            (fgen)
-           [#!eof (make-find-result solved cands)]
+           [#!eof (cons solved cands)]
            [f (match
                   (f solved cands)
                [($ find-result () ()) (loop fgen)]
