@@ -21,6 +21,7 @@
 (define-record box row col)
 (define-record pos row col box)
 (define-record scand pos value)
+(define-record scell pos values)
 (define-record find-result solved eliminated)
 
 (define-record-printer (box value out)
@@ -34,6 +35,10 @@
 (define-record-printer (scand value out)
   (fprintf out "(scand ~s ~s)"
            (scand-pos value) (scand-value value)))
+
+(define-record-printer (scell value out)
+  (fprintf out "(scell ~s ~s)"
+           (scell-pos value) (scell-values value)))
 
 (define (make-2d-generator yfun gen1 gen2-init)
   (make-coroutine-generator
@@ -725,6 +730,103 @@
             ;; (print "  (f, i, j) = (" f ", " i ", " j ")")
             (loop (append found (f i j cands)))) ])))))
 
+(define (scands-to-scells cands)
+  (if (null? cands)
+      '()
+      (let ((pos0 (scand-pos (car cands)))
+            (n0 (scand-value (car cands))))
+        (let loop ((cs cands)
+                   (current-pos pos0)
+                   (current-values '())
+                   (res '()))
+          (if (null? cs)
+              (reverse (cons (make-scell
+                              current-pos (reverse current-values)) res))
+              (let* ((cell (car cs))
+                     (pos1 (scand-pos cell))
+                     (n (scand-value cell)))
+                (if (pos-same? current-pos pos1)
+                    (loop (cdr cs)
+                          current-pos
+                          (cons n current-values)
+                          res)
+                    (loop (cdr cs)
+                          pos1
+                          (cons n '())
+                          (cons (make-scell
+                                 current-pos
+                                 (reverse current-values))
+                                res)))))))))
+
+
+(define (find-xyzwing solved cands)
+  (print "XYZ-wing")
+  (let-values (((threes rest) (partition
+                               (lambda (scell)
+                                 (= 3 (length (scell-values scell))))
+                               (scands-to-scells cands))))
+    (if (null? threes)
+        (make-find-result '() '())
+        (let-values (((twos blah) (partition
+                                   (lambda (scell)
+                                     (= 2 (length (scell-values scell))))
+                                   rest)))
+          (if (null? twos)
+              (make-find-result '() '())
+              (let loop ((ts threes) (res '()))
+                (if (null? ts)
+                    (make-find-result '() res)
+                    (let* ((hinge (car ts))
+                           (ntwos (filter
+                                   (lambda (wing)
+                                     (and (pos-sees?
+                                           (scell-pos hinge)
+                                           (scell-pos wing))
+                                          (= 2
+                                             (length
+                                              (lset-intersection
+                                               =
+                                               (scell-values hinge)
+                                               (scell-values wing))))))
+                                   twos)))
+                      ;; (print "Hinge is now " hinge ", " ntwos)
+                      (if (null? ntwos)
+                          (loop (cdr ts) res)
+                          (loop
+                           (cdr ts)
+                           (combination-fold
+                            (lambda (comb res)
+                              (let* ((w1 (first comb))
+                                     (w2 (second comb))
+                                     (ns (delete-neighbour-dups
+                                          =
+                                          (sort
+                                           (append-map scell-values
+                                                       (list hinge w1 w2))
+                                           <)))
+                                     (zs (lset-intersection
+                                          =
+                                          (scell-values w1)
+                                          (scell-values w2)))
+                                     (z (if (null? zs) 0 (car zs))))
+                                (if (not (and (= 3 (length ns))
+                                              (= 1 (length zs))))
+                                    res
+                                    (append
+                                     res
+                                     (filter
+                                      (lambda (cell)
+                                        (and (= z (scand-value cell))
+                                             (every
+                                              (lambda (scell)
+                                                (and (not (pos-same? (scand-pos cell)
+                                                           (scell-pos scell)))
+                                                     (pos-sees? (scand-pos cell)
+                                                                (scell-pos scell))))
+                                              (list hinge w1 w2))))
+                                      cands)))))
+                            res ntwos 2)))))))))))
+
 (define (update-candidates-solved cands solved)
   (let ((pred (lambda (cell1 cell2)
                 (or (scand-same-pos? cell1 cell2)
@@ -755,6 +857,7 @@
                    find-box/line-reduction
                    find-xwing
                    find-ywing
+                   find-xyzwing
                    )))
         (let loop ((fgen (list->generator funs)))
           (match
@@ -799,7 +902,9 @@
 ;; has pointing pairs and box/line
 ;; (define GRID "000921003009000060000000500080403006007000800500700040003000000020000700800195000")
 ;; has x-wing
-(define GRID "700600008800030000090000310006740005005806900400092100087000020000060009600008001")
+;; (define GRID "700600008800030000090000310006740005005806900400092100087000020000060009600008001")
+;; has x-wing, xyz-wing, x-cycles (+ simple colouring)
+(define GRID "000704005020010070000080002090006250600070008053200010400090000030060090200407000")
 (print GRID)
 
 (define solved (str-to-solved GRID))
