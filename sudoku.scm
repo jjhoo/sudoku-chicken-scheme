@@ -13,7 +13,16 @@
 ;;  You should have received a copy of the GNU Affero General Public License
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ;;
+(module sudoku
+    (sudoku-init
+     sudoku-solve
+     sudoku-scand-fold
+     sudoku-scand-map
+     sudoku-string->grid)
+  (import scheme chicken)
+
 (use srfi-1)
+(use data-structures)
 (require-extension combinatorics)
 (require-extension matchable)
 (require-extension srfi-121)
@@ -70,7 +79,7 @@
 (define (scand-init row col n)
   (make-scand (make-pos row col (cell-box-calc row col)) n))
 
-(define (str-to-solved grid)
+(define (sudoku-string->grid grid)
   (let loop ((i 1) (j 1) (solved '()) (tmp (string->list grid)))
     (if (null? tmp)
         (reverse solved)
@@ -221,7 +230,7 @@
 (define (cells-in-line? xs)
   (or (cells-in-row? xs) (cells-in-col? xs)))
 
-(define (init solved)
+(define (sudoku-init solved)
   (let loop ((xs solved) (cands (grid-init)))
     (if (null? xs)
         cands
@@ -841,7 +850,7 @@
 (define (update-candidates cands removals)
   (lset-difference equal? cands removals))
 
-(define (solver solved cands)
+(define (sudoku-solve solved cands)
   (if (eq? cands '())
       (cons solved cands)
       (let ((funs
@@ -861,65 +870,34 @@
                    )))
         (let loop ((fgen (list->generator funs)))
           (match
-           (fgen)
+              (fgen)
            [#!eof (cons solved cands)]
            [f (match
                   (f solved cands)
-               [($ find-result () ()) (loop fgen)]
-               [($ find-result () eliminated)
-                (begin
-                  (print "Eliminated " eliminated)
-                  (solver solved (lset-xor equal? cands eliminated)))]
-               [($ find-result nsolved eliminated)
-                (begin
-                  (print "Found some solutions? " nsolved)
-                  (solver (merge solved nsolved scand-less?)
-                          (update-candidates-solved
-                           (update-candidates cands eliminated)
-                           nsolved)))])])))))
+                [($ find-result () ()) (loop fgen)]
+                [($ find-result () eliminated)
+                 (begin
+                   (print "Eliminated " eliminated)
+                   (sudoku-solve solved (lset-xor equal? cands eliminated)))]
+                [($ find-result nsolved eliminated)
+                 (begin
+                   (print "Found some solutions? " nsolved)
+                   (sudoku-solve (merge solved nsolved scand-less?)
+                                 (update-candidates-solved
+                                  (update-candidates cands eliminated)
+                                  nsolved)))])])))))
 
-(define ns (list 2 2 2 2 2 5 5 6 6 7 7 9 9 9))
-(print "list " ns
-       "\n deduped "
-       (delete-neighbour-dups = ns)
-       "\n number counts (no limit) "
-       (number-counts ns)
-       "\n number counts (limit = 2) "
-       (number-counts ns 2)
-       "\n number counts (limit = 3) "
-       (number-counts ns 3))
+(define (sudoku-scand-fold fun acc0 cands)
+  (fold (lambda (cell acc)
+         (let ((pos (scand-pos cell)))
+           (fun (pos-row pos) (pos-col pos) (scand-value cell) acc)))
+        acc0
+        cands))
 
-;; This has box/line reduction, simple colouring and y-wing
-;; (define GRID "000040700500780020070002006810007900460000051009600078900800010080064009002050000")
-;; needs naked triple, y-wing
-;; (define GRID "014600300050000007090840100000400800600050009007009000008016030300000010009008570")
-;; can proceed with hidden pair
-;; (define GRID "000000000904607000076804100309701080008000300050308702007502610000403208000000000")
-;; naked triple, hidden triple
-;; (define GRID "300000000970010000600583000200000900500621003008000005000435002000090056000000001")
-;; has pointing pairs
-;; (define GRID "000004910009003520050100840000306080000000000070209000037008060085400700014700000")
-;; has pointing pairs and box/line
-;; (define GRID "000921003009000060000000500080403006007000800500700040003000000020000700800195000")
-;; has x-wing
-;; (define GRID "700600008800030000090000310006740005005806900400092100087000020000060009600008001")
-;; has x-wing, xyz-wing, x-cycles (+ simple colouring)
-(define GRID "000704005020010070000080002090006250600070008053200010400090000030060090200407000")
-(print GRID)
+(define (sudoku-scand-map fun cands)
+  (map (lambda (cell)
+         (let ((pos (scand-pos cell)))
+           (fun (pos-row pos) (pos-col pos) (scand-value cell))))
+       cands))
 
-(define solved (str-to-solved GRID))
-;; (print (length solved))
-;; (print solved)
-
-(define cands (init solved))
-;; (print (find-singles solved cands))
-;; (print cands)
-;; (print (length cands))
-
-(match
- (solver solved cands)
- [(cells . ()) (print "Solved")]
- [(nsolved . ncands)
-  (let* ((xx (lset-difference equal? nsolved solved))
-         (len (length xx)))
-    (print "Found some (count = " len ") " xx))])
+)

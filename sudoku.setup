@@ -1,0 +1,21 @@
+;; -*- Scheme -*-
+
+(use make)
+
+(make (("chicken-sudoku" ("sudoku.scm" "sudoku.so" "sudoku-static.o"))
+       ("sudoku.so" ("sudoku.scm")
+        (compile -s -O3 -d1 sudoku.scm -j sudoku))
+       ("sudoku.import.so" ("sudoku.so")
+        (compile -s sudoku.import.scm -O3 -d0))
+       ("sudoku-static.o" ("sudoku.scm")
+        (compile -c -O2 -d1 sudoku.scm -o sudoku-static.o -unit sudoku)))
+  '("sudoku.so" "sudoku.import.so" "sudoku-static.o" "chicken-sudoku"))
+
+(install-extension
+ ;; Name of your extension:
+ 'sudoku
+ ;; Files to install for your extension:
+ '("sudoku.so" "sudoku.import.so" "sudoku-static.o")
+ ;; Assoc list with properties for your extension:
+ '((version "0.1")
+   (static "sudoku-static.o")))
