@@ -18,8 +18,22 @@ int main()
 
   CHICKEN_run(C_toplevel);
 
-  C_word res = sudoku_solve("000704005020010070000080002090006250600070008053200010400090000030060090200407000");
-  sudoku_map_result(res, test, NULL);
+  C_word res1 = sudoku_solve("000704005020010070000080002090006250600070008053200010400090000030060090200407000");
+
+  /* Keep res1 */
+  void * gcroot = CHICKEN_new_gc_root();
+  CHICKEN_gc_root_set(gcroot, res1);
+
+  sudoku_map_result(res1, test, NULL);
+
+  for (int i=0; i < 10; i++) {
+      C_word res = sudoku_solve("700600008800030000090000310006740005005806900400092100087000020000060009600008001");
+      sudoku_map_result(res, test, NULL);
+  }
+
+  res1 = CHICKEN_gc_root_ref(gcroot);
+  /* Error unless res1 stored before */
+  sudoku_map_result(res1, test, NULL);
 
   return 0;
 }
