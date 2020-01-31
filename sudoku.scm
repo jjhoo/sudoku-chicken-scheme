@@ -19,13 +19,33 @@
      sudoku-scand-fold
      sudoku-scand-map
      sudoku-string->grid)
-  (import scheme chicken)
 
-(use srfi-1)
-(use data-structures)
-(require-extension combinatorics)
-(require-extension matchable)
-(require-extension srfi-121)
+  (import scheme)
+  (cond-expand
+    (chicken-4
+     (import chicken)
+     (import (only extras fprintf))
+     (import (only data-structures flatten merge sort))
+     (require-library combinatorics)
+     (require-library matchable)
+     (require-library srfi-121))
+    (else
+     (import chicken.base
+             chicken.format
+             (only chicken.memory.representation
+                   record-instance-slot record-instance?)
+             (only chicken.sort merge sort))))
+  (import (only srfi-1
+                append-map any every filter find first fold iota
+                lset-difference lset-intersection lset-union lset-xor
+                partition remove second third))
+  (import (only combinatorics
+                combination-fold permutation-fold unordered-subset-map))
+  (import (only matchable match))
+  (import (only srfi-121
+                gdelete-neighbor-dups generator-fold generator->list
+                gfilter list->generator make-coroutine-generator
+                make-iota-generator))
 
 (define-record box row col)
 (define-record pos row col box)
@@ -869,23 +889,25 @@
                    find-xyzwing
                    )))
         (let loop ((fgen (list->generator funs)))
-          (match
-              (fgen)
-           [#!eof (cons solved cands)]
-           [f (match
-                  (f solved cands)
-                [($ find-result () ()) (loop fgen)]
-                [($ find-result () eliminated)
-                 (begin
-                   (print "Eliminated " eliminated)
-                   (sudoku-solve solved (lset-xor equal? cands eliminated)))]
-                [($ find-result nsolved eliminated)
-                 (begin
-                   (print "Found some solutions? " nsolved)
-                   (sudoku-solve (merge solved nsolved scand-less?)
-                                 (update-candidates-solved
-                                  (update-candidates cands eliminated)
-                                  nsolved)))])])))))
+          (let ((f (fgen)))
+            (if (eof-object? f)
+                (cons solved cands)
+                (let* ((result (f solved cands))
+                       (nsolved (find-result-solved result))
+                       (eliminated (find-result-eliminated result)))
+                  (cond ((and (null? nsolved) (null? eliminated))
+                         (loop fgen))
+                        ((null? nsolved)
+                         (begin
+                           (print "Eliminated " eliminated)
+                           (sudoku-solve solved (lset-xor equal? cands eliminated))))
+                        (else
+                         (begin
+                           (print "Found some solutions? " nsolved)
+                           (sudoku-solve (merge solved nsolved scand-less?)
+                                         (update-candidates-solved
+                                          (update-candidates cands eliminated)
+                                          nsolved))))))))))))
 
 (define (sudoku-scand-fold fun acc0 cands)
   (fold (lambda (cell acc)

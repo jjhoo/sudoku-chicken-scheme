@@ -14,8 +14,16 @@
 ;;  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ;;
 
-(use sudoku)
-(require-extension matchable)
+(cond-expand
+  (chicken-4
+   (use extras)
+   (require-library sudoku)
+   (require-library matchable))
+  (else))
+
+(import (only srfi-1 lset-difference))
+(import (only matchable match))
+(import sudoku)
 
 ;; This has box/line reduction, simple colouring and y-wing
 ;; (define GRID "000040700500780020070002006810007900460000051009600078900800010080064009002050000")
