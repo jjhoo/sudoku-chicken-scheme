@@ -76,13 +76,16 @@
   (make-coroutine-generator
    (lambda (yield)
      (let loop ()
-       (match (gen1)
-              [#!eof (yield #!eof)]
-              [i (let loop2 ((gen2 (gen2-init i)))
-                   (match (gen2)
-                     [#!eof (loop)]
-                     [j (yield (yfun i j))
-                        (loop2 gen2)]))])))))
+       (let ((i (gen1)))
+         (if (eof-object? i)
+             (yield i)
+             (let loop2 ((gen2 (gen2-init i)))
+               (let ((j (gen2)))
+                 (if (eof-object? j)
+                     (loop)
+                     (begin
+                       (yield (yfun i j))
+                       (loop2 gen2)))))))))))
 
 (define (box-number-to-box num)
   (let ((q (quotient (sub1 num) SUDOKU-BOXES))
