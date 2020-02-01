@@ -53,6 +53,9 @@
 (define-record scell pos values)
 (define-record find-result solved eliminated)
 
+(define-constant SUDOKU-BOXES 3)
+(define-constant SUDOKU-NUMBERS 9)
+
 (define-record-printer (box value out)
   (fprintf out "(box ~s ~s)"
            (box-row value) (box-col value)))
@@ -77,21 +80,17 @@
               [#!eof (yield #!eof)]
               [i (let loop2 ((gen2 (gen2-init i)))
                    (match (gen2)
-                          [#!eof (loop)]
-                          [j (yield (yfun i j))
-                             (loop2 gen2)]))])))))
+                     [#!eof (loop)]
+                     [j (yield (yfun i j))
+                        (loop2 gen2)]))])))))
 
-(define (box-number-to-index num)
-  (match num
-    [1 (make-box 1 1)] [2 (make-box 1 2)] [3 (make-box 1 3)]
-    [4 (make-box 2 1)] [5 (make-box 2 2)] [6 (make-box 2 3)]
-    [7 (make-box 3 1)] [8 (make-box 3 2)] [9 (make-box 3 3)]))
+(define (box-number-to-box num)
+  (let ((q (quotient (sub1 num) SUDOKU-BOXES))
+        (r (remainder (sub1 num) SUDOKU-BOXES)))
+    (make-box (add1 q) (add1 r))))
 
 (define (num-to-box-number num)
-  (case num
-    ((1 2 3) 1)
-    ((4 5 6) 2)
-    ((7 8 9) 3)))
+  (add1 (quotient (sub1 num) SUDOKU-BOXES)))
 
 (define (cell-box-calc row col)
   (make-box (num-to-box-number row) (num-to-box-number col)))
@@ -107,17 +106,17 @@
                (nsolved (if (= val 0)
                             solved
                             (cons (scand-init i j val) solved)))
-               (ni (if (= j 9) (+ i 1) i))
-               (nj (if (= j 9) 1 (+ j 1))))
+               (ni (if (= j SUDOKU-NUMBERS) (+ i 1) i))
+               (nj (if (= j SUDOKU-NUMBERS) 1 (+ j 1))))
           (loop ni nj nsolved (cdr tmp))))))
 
 (define (grid-init)
   (let ((g (make-coroutine-generator
             (lambda (yield)
               (let loop ((i 1) (j 1) (n 1))
-                (when (not (and (= i 9) (= j 9) (= n 10)))
-                      (cond ((> n 9) (loop i (+ j 1) 1))
-                            ((> j 9) (loop (+ i 1) 1 1))
+                (when (not (and (= i SUDOKU-NUMBERS) (= j SUDOKU-NUMBERS) (= n (add1 SUDOKU-NUMBERS))))
+                      (cond ((> n SUDOKU-NUMBERS) (loop i (+ j 1) 1))
+                            ((> j SUDOKU-NUMBERS) (loop (+ i 1) 1 1))
                             (else (begin
                                     (yield (scand-init i j n))
                                     (loop i j (+ n 1)))))))))))
@@ -145,7 +144,7 @@
 
 (define (scand-get-box box cands)
   (let ((box (if (integer? box)
-                 (box-number-to-index box)
+                 (box-number-to-box box)
                   box)))
     (filter (lambda (cell) (equal? box (pos-box (scand-pos cell)))) cands)))
 
@@ -269,7 +268,7 @@
   (let* ((yfun (lambda (i fun) (cons i fun)))
          (gen (make-2d-generator
                yfun
-               (make-iota-generator 9 1)
+               (make-iota-generator SUDOKU-NUMBERS 1)
                (lambda (i)
                  (list->generator (list scand-get-row
                                         scand-get-col
@@ -461,7 +460,7 @@
 ;; --> other candidates in the same line can be eliminated
 (define (find-pointing-pairs solved cands)
   (print "Pointing pairs")
-  (let loop ((bs (iota 9 1)) (found '()))
+  (let loop ((bs (iota SUDOKU-NUMBERS 1)) (found '()))
     (match bs
       ['() (make-find-result '() found)]
       [(b . rest)
@@ -518,7 +517,7 @@
                  (num-occurrances (remove (lambda (n-cells)
                                            (null? (cdr n-cells)))
                                          (map (lambda (n) (cons n (fun n)))
-                                              (iota 9 1))))
+                                              (iota SUDOKU-NUMBERS 1))))
                  (interesting (filter
                                (lambda (n-cells)
                                  (let ((len (length (cdr n-cells))))
@@ -546,7 +545,7 @@
        (gen (make-2d-generator
              (lambda (i fun) (cons i fun))
              (list->generator (list scand-get-row scand-get-col))
-             (lambda (i) (make-iota-generator 9 1)))))
+             (lambda (i) (make-iota-generator SUDOKU-NUMBERS 1)))))
     (let loop ((g gen) (found '()))
       (match (g)
         [#!eof (make-find-result '() found)]
@@ -652,7 +651,7 @@
   (let* ((ijgen (make-2d-generator
                  (lambda (i j) (cons i j))
                  (make-iota-generator 8 1)
-                 (lambda (i) (make-iota-generator (- 9 i) (+ i 1)))))
+                 (lambda (i) (make-iota-generator (- SUDOKU-NUMBERS i) (+ i 1)))))
          (relim (lambda (xset cands)
                   (match
                       xset
@@ -698,7 +697,7 @@
                      (cond ((> 2 (length is)) '())
                            ((> 2 (length js)) '())
                            (else
-                            (let nloop ((ns (iota 9 1)) (found '()))
+                            (let nloop ((ns (iota SUDOKU-NUMBERS 1)) (found '()))
                               (match ns
                                 ['() found]
                                 [(n . nrest)
@@ -729,7 +728,7 @@
                      (cond ((> 2 (length is)) '())
                            ((> 2 (length js)) '())
                            (else
-                            (let nloop ((ns (iota 9 1)) (found '()))
+                            (let nloop ((ns (iota SUDOKU-NUMBERS 1)) (found '()))
                               (match ns
                                 ['() found]
                                 [(n . nrest)
@@ -748,7 +747,7 @@
                  (make-2d-generator
                   (lambda (i j) (cons i j))
                   (make-iota-generator 8 1)
-                  (lambda (i) (make-iota-generator (- 9 i) (+ i 1))))))))
+                  (lambda (i) (make-iota-generator (- SUDOKU-NUMBERS i) (+ i 1))))))))
     (make-find-result
      '()
      (let loop ((found '()))
