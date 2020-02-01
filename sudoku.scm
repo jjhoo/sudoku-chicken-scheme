@@ -171,7 +171,7 @@
 (define (delete-neighbour-dups = numbers)
   (let ((nil (gensym)))
     (let loop ((xs numbers) (res '()) (current nil))
-      (if (eq? xs '())
+      (if (null? xs)
           (reverse res)
           (match
            xs
@@ -329,8 +329,8 @@
 (define (list-less? < =)
   (lambda (alist blist)
     (let loop ((as alist) (bs blist))
-      (cond ((and (eq? as '()) (eq? bs '())) #f)
-            ((or (eq? as '()) (eq? bs '())) #f)
+      (cond ((and (null? as) (null? bs)) #f)
+            ((or (null? as) (null? bs)) #f)
             ((< (car as) (car bs)) #t)
             ((= (car as) (car bs)) (loop (cdr as) (cdr bs)))
             (else #f)))))
@@ -371,7 +371,7 @@
               (let* ((foos (find-cells-cond
                             (lambda (numbers)
                               (or (equal? perm numbers)
-                                  (eq? '() (lset-difference equal? numbers perm))))
+                                  (null? (lset-difference equal? numbers perm))))
                             cands)))
                 (if (= (length foos) limit)
                     (let ((positions (map car foos)))
@@ -873,7 +873,7 @@
   (lset-difference equal? cands removals))
 
 (define (sudoku-solve solved cands)
-  (if (eq? cands '())
+  (if (null? cands)
       (cons solved cands)
       (let ((funs
              (list find-singles-simple
