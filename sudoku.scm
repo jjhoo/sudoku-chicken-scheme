@@ -302,7 +302,7 @@
                                  (list->generator cands)))
                      [() res]
                      [(cell) (cons cell res)]
-                     [_ res]))
+                     [(cell . rest) res]))
                  '()
                  (unique-positions-gen cands))
                 '()))))
@@ -320,7 +320,7 @@
                                  (list->generator cands)))
                      [() res]
                      [(cell) (cons cell res)]
-                     [xxx res]))
+                     [(cell . rest) res]))
                  '()
                  (unique-numbers-gen cands))
                 '()))))
