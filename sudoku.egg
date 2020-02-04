@@ -3,6 +3,6 @@
  (category misc)
  (author "Jani J. Hakala")
  (license "AGPLv3")
- (dependencies srfi-1 combinatorics matchable srfi-121)
+ (dependencies srfi-1 combinatorics (matchable "1.1") srfi-121)
  (component-options (csc-options -fixnum-arithmetic))
  (components (extension sudoku)))
