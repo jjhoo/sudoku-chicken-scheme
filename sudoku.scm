@@ -40,7 +40,8 @@
                 lset-difference lset-intersection lset-union lset-xor
                 partition remove second third))
   (import (only combinatorics
-                combination-fold permutation-fold unordered-subset-map))
+                ordered-subset-fold ordered-subset-map
+                unordered-subset-fold unordered-subset-map))
   (import (only matchable match))
   (import (only srfi-121
                 gdelete-neighbor-dups generator-fold generator->list
@@ -356,34 +357,34 @@
         (let* ((nums (numbers cands))
                (ncounts (number-counts nums))
                (unums (map first ncounts))
-               (kperms (sort (unordered-subset-map
+               (kcombs (sort (unordered-subset-map
                               (lambda (c) (sort c <))
                               unums limit)
                              (list-less? < equal?))))
           ;; now find if 'limit' count of cells contain a naked group
           ;; of 'limit' count of numbers
-          ;; (print "Combos (" limit ") >> " kperms " << for cands >> " cands)
-          (let loop ((permgen (list->generator kperms)) (found '()))
+          ;; (print "Combos (" limit ") >> " kcombs " << for cands >> " cands)
+          (let loop ((combgen (list->generator kcombs)) (found '()))
             (match
-             (permgen)
+             (combgen)
              [#!eof (make-find-result '() found)]
-             [perm
+             [comb
               (let* ((foos (find-cells-cond
                             (lambda (numbers)
-                              (or (equal? perm numbers)
-                                  (null? (lset-difference equal? numbers perm))))
+                              (or (equal? comb numbers)
+                                  (null? (lset-difference equal? numbers comb))))
                             cands)))
                 (if (= (length foos) limit)
                     (let ((positions (map car foos)))
-                      ;; (print "Found something? " perm " " foos)
-                      (loop permgen
+                      ;; (print "Found something? " comb " " foos)
+                      (loop combgen
                             (append found
                                     (filter
                                      (lambda (cell)
-                                       (and (find (lambda (x) (= x (scand-value cell))) perm)
+                                       (and (find (lambda (x) (= x (scand-value cell))) comb)
                                             (not (find (lambda (x) (equal? x (scand-pos cell))) positions))))
                                      cands))))
-                    (loop permgen found)))]))))))
+                    (loop combgen found)))]))))))
 
 (define (find-naked-groups limit solved cands)
   (print "Naked group (" limit ")")
@@ -406,24 +407,24 @@
            (ret/cc (make-find-result '() '())))
 
        ;; (print "Unums " unums ", ncounts " ncounts ", cands " cands)
-       (let ((kperms (sort (unordered-subset-map
+       (let ((kcombs (sort (unordered-subset-map
                             (lambda (c) (sort c <))
                             unums limit)
                            (list-less? < equal?))))
          ;; now find if a limited number of cells contain
          ;; a certain hidden group
-         (let loop ((permgen (list->generator kperms)) (found '()))
+         (let loop ((combgen (list->generator kcombs)) (found '()))
            (match
-               (permgen)
+               (combgen)
              [#!eof (ret/cc (make-find-result '() found))]
-             [perm
+             [comb
               (let* ((ncands (remove
                               (lambda (cell)
                                 (not
                                  (any
                                   (lambda (x)
                                     (= x (scand-value cell)))
-                                  perm)))
+                                  comb)))
                               cands))
                      (positions (generator->list
                                  (unique-positions-gen ncands)))
@@ -431,13 +432,13 @@
                                    (cons pos
                                          (cell-numbers-for-pos pos ncands)))
                                  positions)))
-                ;; (print "asdf limit " limit ", perm " perm ", cells " cells)
+                ;; (print "asdf limit " limit ", comb " comb ", cells " cells)
                 (if (= limit (length cells))
                     (begin
-                      ;; (print "Found hidden group? " perm
+                      ;; (print "Found hidden group? " comb
                       ;;        ", positions " positions
                       ;;        "\n\t cands " cands)
-                      (loop permgen
+                      (loop combgen
                             (append
                              found
                              (filter
@@ -445,13 +446,13 @@
                                 (and (not (any
                                            (lambda (val)
                                              (= val (scand-value cell)))
-                                           perm))
+                                           comb))
                                      (any
                                       (lambda (pos)
                                         (equal? pos (scand-pos cell)))
                                       positions)))
                               cands))))
-                    (loop permgen found)))])))))))
+                    (loop combgen found)))])))))))
 
 (define (find-hidden-groups limit solved cands)
   (print "Hidden group (" limit ")")
@@ -597,11 +598,11 @@
                  (map
                   (lambda (comb)
                     (sort comb (lambda (a b) (pos-less? (car a) (car b)))))
-                  (combination-fold (lambda (comb res)
-                                      (if (good-comb-fun comb)
-                                          (cons comb res)
-                                          res))
-                                    '() pairs 3)))))
+                  (unordered-subset-fold (lambda (comb res)
+                                           (if (good-comb-fun comb)
+                                               (cons comb res)
+                                               res))
+                                         '() pairs 3)))))
     ;; (print "Pairs " pairs)
     ;; (print "Combinations for " (length pairs)
     ;;        " pairs, filtered combinations " (length combs))
@@ -617,7 +618,7 @@
           rest
           (append
            found
-           (permutation-fold
+           (ordered-subset-fold
             (lambda (perm res)
               (let* ((wing1 (first perm))
                      (pivot (second perm))
@@ -825,7 +826,7 @@
                           (loop (cdr ts) res)
                           (loop
                            (cdr ts)
-                           (combination-fold
+                           (unordered-subset-fold
                             (lambda (comb res)
                               (let* ((w1 (first comb))
                                      (w2 (second comb))
