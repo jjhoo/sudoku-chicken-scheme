@@ -1,5 +1,5 @@
-(use sudoku)
-(import foreign)
+(import sudoku)
+(import (only chicken.platform return-to-host))
 
 (define-foreign-type scell_fun (function void (int int int nonnull-c-pointer)))
 
